@@ -80,7 +80,7 @@ def enumerate_partition_function(N, T):
 
 def mhr_partition_function(kT, E, fe, kT_new):
     """
-    Estimate (relative) partition function at kT_new using MHR.
+    Estimate partition function at kT_new using MHR.
     """
     nrun = len(kT)
     N = [len(e) for e in E]
@@ -88,34 +88,26 @@ def mhr_partition_function(kT, E, fe, kT_new):
     for n in range(nrun):
         for i in range(N[n]):
             E_ni = E[n][i]
-            num = np.exp(-E_ni/kT_new - fe[n])
+            # num = np.exp(-E_ni/kT_new - fe[n])
+            num = np.exp(-E_ni/kT_new)
             denom = 0.0
             for m in range(nrun):
                 denom += N[m] * np.exp(-E_ni/kT[m] + fe[m])
             Z += num / denom
     return Z
 
-
 def free_energies(b, X, nmaxit=20, weights=None, argoffset=True):
     """
+    Relation with partition function: $F = -k_b T \ln Z$, where $Z$ is the partition function.
     Calculate the relative free energies for MHR
         b (2 dimensional array)
         X (list of 3-dimensional arrays)
         nmaxit (int) : Number of iterations
         weights (list of arrays): Weights to be applied to each data point in `X`;
-        argoffset (bool) : If True then a constant is added to the arguments to the exponential functions in
-          the equation given above for evaluating :math:`F^{(1)},F^{(2)}\dotsc` in order to prevent overflows
-          and underflows (as much as is possible).
 
     Returns:
-        array: Free energies,\dotsc` corresponding to :math:`\mathbf{b}^{(1)},\mathbf{b}^{(1)},\dotsc`. 
-        Equivalently, `F[n]` is the free energy corresopnding to `b[n]`
-
+        array: Free energies
     """
-
-    # Relevant equation:
-    # \exp(-F^{(n)}) = \sum_{p=1}^{R}\sum_{i=1}^{N_p}\frac{ \exp(\mathbf{b}^{(n)}\cdot\mathbf{X}_{pi}+D) }{\sum_{q=1}^{R}\exp(\mathbf{b}^{(q)}\cdot\mathbf{X}_{pi}+F^{(q)}+D)N_q}
-    
     nrun = len(b)        
     assert len(X) == nrun, "Check 'b' and 'X' have matching lengths"
                       
@@ -124,7 +116,7 @@ def free_energies(b, X, nmaxit=20, weights=None, argoffset=True):
     f = np.zeros(nrun)
 
     # Number of data points in each data set
-    ndata = np.zeros(nrun, dtype = 'int')
+    ndata = np.zeros(nrun, dtype='int')
     for irun1 in range(nrun):
         ndata[irun1] = X[irun1].shape[0]
 
@@ -134,151 +126,44 @@ def free_energies(b, X, nmaxit=20, weights=None, argoffset=True):
         for irun1 in range(nrun):
             for irun2 in range(nrun):
                 for idata in range(ndata[irun2]):
-                    D += np.dot(b[irun1,:],X[irun2][idata,:])
+                    D += np.dot(b[irun1,:], X[irun2][idata,:])
                     Dcount += 1
-        D = - D / Dcount
+        D = -D / Dcount
        
-        
     for n in range(nmaxit):
         for i in range(nrun):
             f[i] = 0.0
         
-            # f = free_energy(...)
             for irun1 in range(nrun):
                 for idata in range(ndata[irun1]):
-                    # Accumulate the denominator
-                    sum = 0.0
+                    # Find maximum argument for stability
+                    max_val = -np.inf
                     for irun2 in range(nrun):
-                        arg = np.dot(b[irun2,:],X[irun1][idata,:]) + fold[irun2] + D
-                        sum += 1.0*ndata[irun2]*np.exp(arg)
-
-                    # 'sum' now the denominator in the equation given above
-                    # Calculate the numerator and add the term to the sum
-                    arg = np.dot(b[irun1,:],X[irun1][idata,:]) + D
-                    if weights == None:
-                        f[i] += (1.0/sum)*np.exp(arg)
+                        arg_val = np.dot(b[irun2,:], X[irun1][idata,:]) + fold[irun2] + D
+                        if arg_val > max_val:
+                            max_val = arg_val
+                    
+                    # Compute denominator with stabilization
+                    denom_val = 0.0
+                    for irun2 in range(nrun):
+                        arg_val = np.dot(b[irun2,:], X[irun1][idata,:]) + fold[irun2] + D
+                        denom_val += ndata[irun2] * np.exp(arg_val - max_val)
+                    
+                    # Compute numerator argument
+                    num_arg = np.dot(b[i,:], X[irun1][idata,:]) + D
+                    
+                    # Compute stable term: exp(num_arg - max_val) / denom_val
+                    term = np.exp(num_arg - max_val) / denom_val
+                    
+                    if weights is None:
+                        f[i] += term
                     else:
-                        f[i] += (weights[irun1][idata]/sum)*np.exp(arg)
+                        f[i] += weights[irun1][idata] * term
 
         fold[:] = -np.log(f[:])
         fold = fold - fold.min()
         
     return fold
-
-
-def reweight_observable(b, X, obs, bnew, fe=None, weights=None, argoffset=True):
-
-    """
-
-    Arguments:
-        b (2 dimensional array)
-        X (list of 3-dimensional arrays)
-        obs (list of 2-dimensional arrays): Values of the observables
-        fe (array) (optional): Free energies
-        weights (list of arrays): Weights to be applied to each data point in `X`;
-        argoffset (bool) : If True then a constant is added to the arguments to the exponential functions
-    Returns:
-        float: The value of the observable, :math:`\langle O'\rangle`
-
-    """
-
-    # Relevant equation:
-    # `\langle O'\rangle = \frac{ \sum_{n=1}^{R}\sum_{i=1}^{N_n}O_{ni}\exp( (\mathbf{b}'-\mathbf{b}^{(n)})\cdot\mathbf{X}_{ni}-F^{(n)}+C ) }{ \sum_{n=1}^{R}\sum_{i=1}^{N_n}\exp( (\mathbf{b}'-\mathbf{b}^{(n)})\cdot\mathbf{X}_{ni}-F^{(n)}+C )}`,
-
-    
-    nrun = len(b)
-    assert len(X) == nrun, "Check 'X' and 'b' have matching lengths"
-    assert len(obs) == nrun, "Check 'obs' and 'b' have matching lengths"
-
-    ndata = np.zeros(nrun, dtype = 'int')
-
-    # If free energies are specified then use them; if not then calculate them from scratch
-    # using default parameters
-    if fe == None:
-        fe = free_energies(b, X, weights=weights)
-    
-    
-    for irun1 in range(nrun):
-        assert len(X[irun1]) == len(obs[irun1]), "Check 'X' and 'obs' have same shape"
-        # Set ndata to the number of energy data points in 'e[i,:]' - for run 'i'
-        ndata[irun1] = X[irun1].shape[0]
-
-    # Determine 'C' if needed
-    C = 0.0
-    Ccount = 0
-    if argoffset:
-        for irun1 in range(nrun):
-            for idata in range(ndata[irun1]):
-                C += np.dot((bnew[:]-b[irun1,:]),X[irun1][idata,:])
-                Ccount += 1
-        C = - C / Ccount
-
-
-    # Calculate denominator in the equation
-    denom = 0.0
-    for irun1 in range(nrun):
-        for idata in range(ndata[irun1]):
-            arg = np.dot((bnew[:]-b[irun1,:]),X[irun1][idata,:]) - fe[irun1]
-            if weights == None:
-                denom += np.exp(arg)
-            else:
-                denom += weights[irun1][idata]*np.exp(arg)
-            
-    # Calculate the value
-    robs = 0.0
-    for irun1 in range(nrun):
-        for idata in range(ndata[irun1]):
-            arg = np.dot((bnew[:]-b[irun1,:]),X[irun1][idata,:]) - fe[irun1]
-            if weights == None:
-                robs += (1.0/denom)*np.exp(arg)*obs[irun1][idata]
-            else:
-                robs += (weights[irun1][idata]/denom)*np.exp(arg)*obs[irun1][idata]
-            
-    return robs
-
-
-def reweight_observable_nvt(kT, E, obs, kT_new, weights=None):
-
-    r"""
-    Calculate an observable in the NVT ensemble at a new temperature using MHR.
-    Arguments:
-        kT (array): Values of :math:`kT` for the various simulations, where :math:`k` is the Boltzmann
-          constant and :math:`T` is the temperature.
-        E (list of arrays): `E[n]` is an array containing the energies for the `n` th simulation;
-          `E[n][i]` is the energy for the `i` th data point.
-        obs (list of arrays): `obs[n][i]` is the observable corresponding to the `i` th data point
-           in the `n` th simulation.
-        kT_new (array): The :math:`kT` to be reweighted to
-        weights (list of arrays): Weights to be applied to each data point in `X`;
-          
-
-    Returns:
-        float: The value of the observable at `kT_new` calculated using MHR.
-
-    """
-    
-    nrun = len(kT)
-    
-    b = []
-    for n in range(nrun):
-        b.append([ -1.0/kT[n] ])
-    b = np.asarray(b)
-    
-    X = []
-    for n in range(nrun):
-        Xn = np.zeros( (len(E[n]),1) )
-        Xn[:,0] = E[n]
-        X.append(Xn)
-
-    obs2 = []
-    for n in range(nrun):
-        obs2n = np.zeros( (len(obs[n]),1) )
-        obs2n[:,0] = obs[n]
-        obs2.append(Xn)
-
-    bnew = np.asarray([-1.0/kT_new])
-    
-    return reweight_observable(b, X, obs, bnew, weights=weights)
 
 def save_csv(filename, xvals, yvals, xlabel='x', ylabel='y'):
     with open(filename, "w", newline='') as f:
@@ -289,10 +174,10 @@ def save_csv(filename, xvals, yvals, xlabel='x', ylabel='y'):
 
 
 def main():
-    N = 5 
+    N = 4 
     Tc = 2.269
     delta = 1.5
-    npoints = 30
+    npoints = 20
     kT = np.linspace(Tc - delta, Tc + delta, npoints)
     nsamples = 5000
     therm_steps = 2000
@@ -329,12 +214,6 @@ def main():
 
     # Estimate partition function at temperatures
     Te = np.linspace(Tc - delta, Tc + delta, 5)
-    Z_mhr = []
-    print("Estimating partition function Z(T) with MHR...")
-    for T in Te:
-        Z_mhr.append(mhr_partition_function(kT, E, fe, T))
-    Z_mhr = np.array(Z_mhr)
-    save_csv("results/partition_mhr.csv", Te, Z_mhr, xlabel='Temperature', ylabel='Partition_MHR')
 
     # Brute-force enumerate partition function (Warning: exponential cost!)
     print(f"Enumerating all {2**(N*N):,} configurations for N={N} ...")
@@ -344,6 +223,14 @@ def main():
     Z_exact = np.array(Z_exact)
     save_csv("results/partition_exact.csv", Te, Z_exact, xlabel='Temperature', ylabel='Partition_Exact')
 
+    Z_mhr = []
+    print("Estimating partition function Z(T) with MHR...")
+    for T in Te:
+        Z_mhr.append(mhr_partition_function(kT, E, fe, T))
+    Z_mhr = np.array(Z_mhr)
+    scale = Z_exact[0] / Z_mhr[0]
+    Z_mhr = Z_mhr * scale
+    save_csv("results/partition_mhr.csv", Te, Z_mhr, xlabel='Temperature', ylabel='Partition_MHR')
     mse_pt = (Z_mhr - Z_exact)**2
     save_csv("results/mse.csv", Te, mse_pt, xlabel='Temperature', ylabel='MSE')
     
