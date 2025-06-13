@@ -156,6 +156,68 @@ def RunWangLandau(Nitt,Energies,latt,indE,flatness):
                 lnf /= 2.
     return (lngE, Hist)
 
+def RunWangLandau_RecordZ(Nitt, Energies, latt, indE, flatness, T, save_interval=10000):
+    """
+    Wang-Landau loop that records Z* at regular intervals.
+
+    Parameters
+    ----------
+    ...
+    T : float
+        Temperature at which to estimate the partition function.
+    save_interval : int
+        Number of iterations between each recording of Z*.
+
+    Returns
+    -------
+    z_history : list of float
+        Partition function estimates at each checkpoint.
+    iter_history : list of int
+        Iteration indices corresponding to z_history.
+    """
+    N   = len(latt)
+    Ene = int(CEnergy(latt))
+    Emin, Emax = Energies[0],Energies[-1]
+    lngE = np.zeros(len(Energies))
+    Hist = np.zeros(len(Energies))
+    lnf = 1.0
+    N2 = N*N
+
+    z_history = []
+    iter_history = []
+
+    for itt in range(Nitt):
+        t = int(random.rand()*N2)
+        (i, j) = (int(t/N), t%N)
+        S = latt[i,j]
+        WF = latt[(i+1)%N,j]+latt[i,(j+1)%N]+latt[(i-1)%N,j]+latt[i,(j-1)%N]
+        Enew = Ene + int(2*S*WF)
+        lgnew = lngE[indE[Enew-Emin]]
+        lgold = lngE[indE[Ene-Emin]]
+        P = 1.0
+        if lgold-lgnew < 0 : P=np.exp(lgold-lgnew)
+        if P > random.rand():
+            latt[i,j] = -S
+            Ene = Enew
+        Hist[indE[Ene-Emin]] += 1
+        lngE[indE[Ene-Emin]] += lnf
+        if (itt+1) % 1000 == 0:
+            aH = np.sum(Hist)/N2
+            mH = np.min(Hist)
+            if mH > aH*flatness:
+                Hist[:] = 0
+                lnf /= 2.
+
+        # Save Z* at intervals
+        if (itt+1) % save_interval == 0 or itt == Nitt-1:
+            # Normalize g(E) for consistency (use same normalization each time)
+            lngE_norm = lngE - np.max(lngE)
+            Z = np.sum(np.exp(lngE_norm - Energies / T))
+            z_history.append(Z)
+            iter_history.append(itt+1)
+
+    return z_history, iter_history
+
 def partition_function(Energies, lngE, T):
     """
     Estimate the partition function Z(T) at temperature(s) T using the density of states.
@@ -300,7 +362,31 @@ def main():
     plt.close()
 
 
+def main1():
+    N = 4
+    Nitt = int(1e8)   # Lower for demonstration, can increase for real runs
+    flatness = 0.95
+    T = 2.5           # Example temperature to monitor Z*(T)
+    save_interval = 5000
+
+    Energies, indE, Emin = PrepareEnergies(N)
+    latt = RandomL(N)
+
+    print(f"Running Wang-Landau for N={N}, T={T}, Nitt={Nitt} ...")
+    z_history, iter_history = RunWangLandau_RecordZ(
+        Nitt, Energies, latt, indE, flatness, T, save_interval=save_interval
+    )
+
+    plt.figure(figsize=(8,4))
+    plt.plot(iter_history, z_history, marker='o')
+    plt.xlabel('Wang-Landau Iteration')
+    plt.ylabel(r'$Z^*$ (Partition Function Estimate)')
+    plt.title(r'Evolution of $Z^*$ During Wang-Landau')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.savefig("results/wl_partition_evolution.png")
+    plt.show()
 
 
 if __name__ == "__main__":
-    main()
+    main1()
