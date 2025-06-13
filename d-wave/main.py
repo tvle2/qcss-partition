@@ -9,6 +9,7 @@ import zlib
 import json
 import math
 import os
+import minorminer.subgraph
 
 
 def Start_DWave_connection(device):

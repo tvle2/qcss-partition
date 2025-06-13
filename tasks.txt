@@ -1,0 +1,5 @@
+1. add docstrings to your functions which describe what the variables are that are the inputs, and what the output is
+
+2. compute an error measure between the true partition function of this small Ising model and the partition function estimation found by Wang Landau.
+
+3. x-axis: Wang Landau iteration. y-axis: Z* (estimate of the partition function). Then plot, as the wang landau algorithm progresses, what the current partition function estimate is as a function of the iteration index.
