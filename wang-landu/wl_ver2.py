@@ -9,6 +9,19 @@ import os
 # ----- Wang-Landau Core Functions -----
 @jit(nopython=True)
 def CEnergy(latt):
+    """
+    Compute the total energy of a 2D Ising lattice with periodic boundary conditions.
+
+    Parameters
+    ----------
+    latt : np.ndarray, shape (N, N)
+        2D array of spins (+1/-1).
+
+    Returns
+    -------
+    float
+        The total energy of the lattice configuration.
+    """
     N = np.shape(latt)[0]
     Ene = 0
     for i in range(N):
@@ -19,9 +32,39 @@ def CEnergy(latt):
     return Ene/2.
 
 def RandomL(N):
+    """
+    Generate a random N x N Ising spin lattice with spins (+1 / -1).
+
+    Parameters
+    ----------
+    N : int
+        Size of the lattice.
+
+    Returns
+    -------
+    np.ndarray, shape (N, N)
+        Randomly initialized lattice of spins (+1 or -1).
+    """
     return np.array(np.sign(2*random.random((N,N))-1),dtype=int) 
 
 def PrepareEnergies(N):
+    """
+    Prepare a list of possible energy values for the N x N Ising model and map energies to indices.
+
+    Parameters
+    ----------
+    N : int
+        Lattice size (N x N).
+
+    Returns
+    -------
+    Energies : np.ndarray
+        Array of all possible energy values.
+    indE : np.ndarray
+        Index mapping from energy value (offset by Emin) to position in Energies array.
+    Emin : int
+        Minimum possible energy value.
+    """
     Energies = (np.array(4*np.arange(-int(N*N/2),int(N*N/2)+1),dtype=int)).tolist()
     Energies.pop(1)  
     Energies.pop(-2) 
@@ -33,6 +76,26 @@ def PrepareEnergies(N):
     return (Energies, indE, Emin)
 
 def WangLandau(Nitt, N, flatness):
+    """
+    Perform the Wang-Landau algorithm to estimate the density of states.
+
+    ----------
+    Nitt : int
+        Number of Wang-Landau iterations (MC steps).
+    N : int
+        Lattice size (N x N).
+    flatness : float
+        Histogram flatness criterion.
+
+    Returns
+    -------
+    Energies : np.ndarray
+        Array of all possible energy values.
+    lngE : np.ndarray
+        Estimated log-density of states, one per energy.
+    Hist : np.ndarray
+        Final histogram of energy visits.
+    """
     (Energies, indE, Emin) = PrepareEnergies(N)
     latt = RandomL(N)
     lngE, Hist = RunWangLandau(Nitt,Energies,latt,indE,flatness)
@@ -40,6 +103,29 @@ def WangLandau(Nitt, N, flatness):
 
 @jit(nopython=True)
 def RunWangLandau(Nitt,Energies,latt,indE,flatness):
+    """
+    Main Wang-Landau MC loop to iteratively refine log-density of states (lngE).
+
+    Parameters
+    ----------
+    Nitt : int
+        Number of Wang-Landau iterations (MC steps).
+    Energies : np.ndarray
+        List of all possible energy values.
+    latt : np.ndarray, shape (N, N)
+        Initial Ising lattice configuration.
+    indE : np.ndarray
+        Index mapping from energy to Energies array.
+    flatness : float
+        Histogram flatness criterion.
+
+    Returns
+    -------
+    lngE : np.ndarray
+        Estimated log-density of states.
+    Hist : np.ndarray
+        Final histogram of energy.
+    """
     N   = len(latt)
     Ene = int(CEnergy(latt))
     Emin, Emax = Energies[0],Energies[-1]
@@ -71,6 +157,23 @@ def RunWangLandau(Nitt,Energies,latt,indE,flatness):
     return (lngE, Hist)
 
 def partition_function(Energies, lngE, T):
+    """
+    Estimate the partition function Z(T) at temperature(s) T using the density of states.
+
+    Parameters
+    ----------
+    Energies : np.ndarray
+        Array of all possible energy values.
+    lngE : np.ndarray
+        Log-density of states for each energy.
+    T : float or array-like
+        Temperature(s) at which to evaluate the partition function.
+
+    Returns
+    -------
+    Z : float or np.ndarray
+        Partition function value(s) at the specified temperature(s).
+    """
     Energies = np.array(Energies)
     lngE = np.array(lngE)
     if np.isscalar(T):
@@ -83,6 +186,21 @@ def partition_function(Energies, lngE, T):
         return np.array(Zs)
 
 def enumerate_partition_function(N, T):
+    """
+    Brute-force computation of the exact partition function by enumerating all configurations.
+
+    Parameters
+    ----------
+    N : int
+        Lattice size (N x N).
+    T : float
+        Temperature at which to evaluate the partition function.
+
+    Returns
+    -------
+    Z : float
+        Exact partition function value at temperature T.
+    """
     n_sites = N*N
     Z = 0.0
     for spins in itertools.product([-1, 1], repeat=n_sites):
@@ -92,6 +210,19 @@ def enumerate_partition_function(N, T):
     return Z
 
 def normalize_lngE(lngE):
+    """
+    Normalize log-density of states so that ground state degeneracy matches known value.
+
+    Parameters
+    ----------
+    lngE : np.ndarray
+        Log-density of states before normalization.
+
+    Returns
+    -------
+    lngE_norm : np.ndarray
+        Normalized log-density of states.
+    """
     # For N=4, ground state degeneracy = 4
     if lngE[-1]>lngE[0]:
         lgC = np.log(4)-lngE[-1]-np.log(1+np.exp(lngE[0]-lngE[-1]))

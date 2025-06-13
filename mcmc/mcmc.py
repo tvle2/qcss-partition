@@ -17,6 +17,19 @@ sign = lambda x : math.copysign(1,x)
 
 @jit(nopython=True)
 def CEnergy(latt, N):
+    """
+    Compute the total energy of a 2D Ising lattice with periodic boundary conditions.
+
+    Parameters
+    ----------
+    latt : np.ndarray, shape (N, N)
+        2D array of spins (+1/-1).
+
+    Returns
+    -------
+    float
+        The total energy of the lattice configuration.
+    """
     Ene = 0
     for i in range(N):
         for j in range(N):
@@ -26,6 +39,19 @@ def CEnergy(latt, N):
     return int(Ene/2)
 
 def RandomL(N):
+    """
+    Generate a random N x N Ising spin lattice with spins (+1 / -1).
+
+    Parameters
+    ----------
+    N : int
+        Size of the lattice.
+
+    Returns
+    -------
+    np.ndarray, shape (N, N)
+        Randomly initialized lattice of spins (+1 or -1).
+    """
     latt = np.zeros((N,N), dtype=int)
     for i in range(N):
         for j in range(N):
@@ -70,6 +96,21 @@ def metropolis_energy_samples(N, T, latt, nsamples=10000, therm_steps=10000, swe
 
 
 def enumerate_partition_function(N, T):
+    """
+    Compute the exact partition function by brute-force enumeration of all possible spin configurations.
+
+    Parameters
+    ----------
+    N : int
+        Lattice size (N x N).
+    T : float
+        Temperature.
+
+    Returns
+    -------
+    float
+        Partition function Z(T) for the given temperature.
+    """
     n_sites = N*N
     Z = 0.0
     for spins in itertools.product([-1, 1], repeat=n_sites):
@@ -80,7 +121,22 @@ def enumerate_partition_function(N, T):
 
 def mhr_partition_function(kT, E, fe, kT_new):
     """
-    Estimate partition function at kT_new using MHR.
+    Estimate the partition function at a new temperature using the Multiple Histogram Reweighting (MHR) method.
+
+    Parameters
+    ----------
+    kT : Temperatures used for sampling (array of floats).
+    E : list of np.ndarray
+        List of arrays of sampled energies for each temperature in kT.
+    fe : np.ndarray
+        Relative free energies for each temperature in kT.
+    kT_new : float
+        The target temperature at which to estimate the partition function.
+
+    Returns
+    -------
+    float
+        Estimated partition function at temperature kT_new.
     """
     nrun = len(kT)
     N = [len(e) for e in E]
@@ -215,7 +271,7 @@ def main():
     # Estimate partition function at temperatures
     Te = np.linspace(Tc - delta, Tc + delta, 5)
 
-    # Brute-force enumerate partition function (Warning: exponential cost!)
+    # Brute-force enumerate partition function 
     print(f"Enumerating all {2**(N*N):,} configurations for N={N} ...")
     Z_exact = []
     for T in Te:
